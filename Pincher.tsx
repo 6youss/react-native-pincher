@@ -1,5 +1,5 @@
 import React from 'react';
-import {Dimensions, StyleSheet, View} from 'react-native';
+import {Dimensions, StyleSheet} from 'react-native';
 
 import {Gesture, GestureDetector} from 'react-native-gesture-handler';
 import Animated, {
@@ -18,12 +18,18 @@ const Pincher = (props: React.PropsWithChildren<any>) => {
   //
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
-  const xCenter = useSharedValue(0);
-  const yCenter = useSharedValue(0);
+  const x = useSharedValue(0);
+  const y = useSharedValue(0);
   const xFocal = useSharedValue(0);
   const yFocal = useSharedValue(0);
   const scale = useSharedValue(1);
-  const savedScale = useSharedValue(1);
+  const lastScale = useSharedValue(1);
+  const xPreviousOffset = useSharedValue(0);
+  const yPreviousOffset = useSharedValue(0);
+  const xNewOffset = useSharedValue(0);
+  const yNewOffset = useSharedValue(0);
+  const xOffset = useSharedValue(0);
+  const yOffset = useSharedValue(0);
 
   const animatedStyles = useAnimatedStyle(() => {
     return {
@@ -33,13 +39,9 @@ const Pincher = (props: React.PropsWithChildren<any>) => {
         {translateX: dragOffset.value.x},
         {translateY: dragOffset.value.y},
 
-        {translateX: translateX.value},
-        {translateY: translateY.value},
+        {translateX: xOffset.value},
+        {translateY: yOffset.value},
         {scale: scale.value},
-        {translateX: -translateX.value},
-        {translateY: -translateY.value},
-
-        {rotateZ: `${rotation.value}rad`},
       ],
     };
   });
@@ -53,28 +55,36 @@ const Pincher = (props: React.PropsWithChildren<any>) => {
       };
     })
     .onEnd(() => {
+      x.value = x.value + dragOffset.value.x - start.value.x;
+      y.value = y.value + dragOffset.value.y - start.value.y;
       start.value = {
         x: dragOffset.value.x,
         y: dragOffset.value.y,
       };
     });
 
-  const xOrigin = useSharedValue(0);
-  const yOrigin = useSharedValue(0);
   const zoomGesture = Gesture.Pinch()
     .onStart(event => {
       xFocal.value = event.focalX;
       yFocal.value = event.focalY;
+      translateX.value = (xFocal.value - x.value) / lastScale.value;
+      translateY.value = (yFocal.value - y.value) / lastScale.value;
     })
     .onUpdate(event => {
-      scale.value = savedScale.value * event.scale;
-      translateX.value = xFocal.value - xCenter.value;
-      translateY.value = yFocal.value - yCenter.value;
+      scale.value = lastScale.value * event.scale;
+      xNewOffset.value = (1 - event.scale) * translateX.value;
+      xOffset.value =
+        lastScale.value * xNewOffset.value + xPreviousOffset.value;
+      yNewOffset.value = (1 - event.scale) * translateY.value;
+      yOffset.value =
+        lastScale.value * yNewOffset.value + yPreviousOffset.value;
     })
     .onEnd(() => {
-      savedScale.value = scale.value;
-      xOrigin.value = xFocal.value;
-      yOrigin.value = yFocal.value;
+      xPreviousOffset.value = xOffset.value;
+      yPreviousOffset.value = yOffset.value;
+      x.value = x.value + xNewOffset.value * lastScale.value;
+      y.value = y.value + yNewOffset.value * lastScale.value;
+      lastScale.value = scale.value;
     });
 
   const rotateGesture = Gesture.Rotation()
@@ -91,6 +101,7 @@ const Pincher = (props: React.PropsWithChildren<any>) => {
   );
 
   const middleStyles = useAnimatedStyle(() => ({
+    display: 'none',
     position: 'absolute',
     left: width.value / 2,
     top: height.value / 2,
@@ -112,8 +123,8 @@ const Pincher = (props: React.PropsWithChildren<any>) => {
   }));
   const offsetStyles = useAnimatedStyle(() => ({
     position: 'absolute',
-    left: xCenter.value,
-    top: yCenter.value,
+    left: x.value,
+    top: y.value,
     width: 10,
     height: 10,
     backgroundColor: 'blue',
@@ -121,14 +132,14 @@ const Pincher = (props: React.PropsWithChildren<any>) => {
   }));
 
   return (
-    <GestureDetector gesture={zoomGesture}>
+    <GestureDetector gesture={composed}>
       <Animated.View
         style={styles.container}
         onLayout={event => {
           width.value = event.nativeEvent.layout.width;
           height.value = event.nativeEvent.layout.height;
-          xCenter.value = event.nativeEvent.layout.width / 2;
-          yCenter.value = event.nativeEvent.layout.height / 2;
+          x.value = event.nativeEvent.layout.width / 2;
+          y.value = event.nativeEvent.layout.height / 2;
         }}>
         <Animated.View collapsable={false} style={animatedStyles}>
           {props.children}
@@ -136,6 +147,8 @@ const Pincher = (props: React.PropsWithChildren<any>) => {
         <Animated.View style={middleStyles}></Animated.View>
         <Animated.View style={focalStyles}></Animated.View>
         <Animated.View style={offsetStyles}></Animated.View>
+
+        <Animated.View style={styles.test}></Animated.View>
       </Animated.View>
     </GestureDetector>
   );
@@ -150,5 +163,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'gray',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+
+  test: {
+    display: 'none',
+    backgroundColor: 'red',
+    width: 30,
+    height: 30,
+    transform: [{translateX: 15}, {translateY: 15}, {scale: 10}],
   },
 });
