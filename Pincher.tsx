@@ -3,27 +3,39 @@ import {Dimensions, StyleSheet} from 'react-native';
 
 import {Gesture, GestureDetector} from 'react-native-gesture-handler';
 import Animated, {
+  runOnUI,
   useAnimatedStyle,
   useSharedValue,
+  withSpring,
 } from 'react-native-reanimated';
 
-const Pincher = (props: React.PropsWithChildren<any>) => {
+interface PincherProps extends React.PropsWithChildren<any> {
+  minScale: number;
+  maxScale: number;
+}
+
+const Pincher = (props: PincherProps) => {
+  const {minScale = 1, maxScale = 3} = props;
   const width = useSharedValue(Dimensions.get('screen').width);
   const height = useSharedValue(Dimensions.get('screen').height);
-  const dragOffset = useSharedValue({x: 0, y: 0});
-  const start = useSharedValue({x: 0, y: 0});
-  const rotation = useSharedValue(0);
-  const savedRotation = useSharedValue(0);
 
-  //
+  const xDragOffset = useSharedValue(0);
+  const yDragOffset = useSharedValue(0);
+  const xPreviousDrag = useSharedValue(0);
+  const yPreviousDrag = useSharedValue(0);
+
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
-  const x = useSharedValue(0);
-  const y = useSharedValue(0);
+
+  const xCenter = useSharedValue(0);
+  const yCenter = useSharedValue(0);
+
   const xFocal = useSharedValue(0);
   const yFocal = useSharedValue(0);
+
   const scale = useSharedValue(1);
-  const lastScale = useSharedValue(1);
+  const prevScale = useSharedValue(1);
+
   const xPreviousOffset = useSharedValue(0);
   const yPreviousOffset = useSharedValue(0);
   const xNewOffset = useSharedValue(0);
@@ -36,8 +48,8 @@ const Pincher = (props: React.PropsWithChildren<any>) => {
       position: 'relative',
 
       transform: [
-        {translateX: dragOffset.value.x},
-        {translateY: dragOffset.value.y},
+        {translateX: xDragOffset.value},
+        {translateY: yDragOffset.value},
 
         {translateX: xOffset.value},
         {translateY: yOffset.value},
@@ -49,56 +61,58 @@ const Pincher = (props: React.PropsWithChildren<any>) => {
   const dragGesture = Gesture.Pan()
     .averageTouches(true)
     .onUpdate(e => {
-      dragOffset.value = {
-        x: e.translationX + start.value.x,
-        y: e.translationY + start.value.y,
-      };
+      xDragOffset.value = e.translationX + xPreviousDrag.value;
+      yDragOffset.value = e.translationY + yPreviousDrag.value;
     })
     .onEnd(() => {
-      x.value = x.value + dragOffset.value.x - start.value.x;
-      y.value = y.value + dragOffset.value.y - start.value.y;
-      start.value = {
-        x: dragOffset.value.x,
-        y: dragOffset.value.y,
-      };
+      xCenter.value = xCenter.value + xDragOffset.value - xPreviousDrag.value;
+      yCenter.value = yCenter.value + yDragOffset.value - yPreviousDrag.value;
+      xPreviousDrag.value = xDragOffset.value;
+      yPreviousDrag.value = yDragOffset.value;
     });
 
+  function isScalable(nextScale: number) {
+    'worklet';
+    return nextScale >= minScale && nextScale <= maxScale;
+  }
   const zoomGesture = Gesture.Pinch()
+
     .onStart(event => {
+      if (!isScalable(scale.value)) {
+        return;
+      }
       xFocal.value = event.focalX;
       yFocal.value = event.focalY;
-      translateX.value = (xFocal.value - x.value) / lastScale.value;
-      translateY.value = (yFocal.value - y.value) / lastScale.value;
+      translateX.value = (xFocal.value - xCenter.value) / prevScale.value;
+      translateY.value = (yFocal.value - yCenter.value) / prevScale.value;
     })
     .onUpdate(event => {
-      scale.value = lastScale.value * event.scale;
+      const nextScale = prevScale.value * event.scale;
+      if (!isScalable(nextScale)) {
+        return;
+      }
+      scale.value = nextScale;
+
       xNewOffset.value = (1 - event.scale) * translateX.value;
-      xOffset.value =
-        lastScale.value * xNewOffset.value + xPreviousOffset.value;
       yNewOffset.value = (1 - event.scale) * translateY.value;
+
+      xOffset.value =
+        prevScale.value * xNewOffset.value + xPreviousOffset.value;
       yOffset.value =
-        lastScale.value * yNewOffset.value + yPreviousOffset.value;
+        prevScale.value * yNewOffset.value + yPreviousOffset.value;
     })
     .onEnd(() => {
+      if (!isScalable(scale.value)) {
+        return;
+      }
       xPreviousOffset.value = xOffset.value;
       yPreviousOffset.value = yOffset.value;
-      x.value = x.value + xNewOffset.value * lastScale.value;
-      y.value = y.value + yNewOffset.value * lastScale.value;
-      lastScale.value = scale.value;
+      xCenter.value = xCenter.value + xNewOffset.value * prevScale.value;
+      yCenter.value = yCenter.value + yNewOffset.value * prevScale.value;
+      prevScale.value = scale.value;
     });
 
-  const rotateGesture = Gesture.Rotation()
-    .onUpdate(event => {
-      rotation.value = savedRotation.value + event.rotation;
-    })
-    .onEnd(() => {
-      savedRotation.value = rotation.value;
-    });
-
-  const composed = Gesture.Simultaneous(
-    dragGesture,
-    Gesture.Simultaneous(rotateGesture, zoomGesture),
-  );
+  const gesture = Gesture.Simultaneous(dragGesture, zoomGesture);
 
   const middleStyles = useAnimatedStyle(() => ({
     display: 'none',
@@ -123,8 +137,8 @@ const Pincher = (props: React.PropsWithChildren<any>) => {
   }));
   const offsetStyles = useAnimatedStyle(() => ({
     position: 'absolute',
-    left: x.value,
-    top: y.value,
+    left: xCenter.value,
+    top: yCenter.value,
     width: 10,
     height: 10,
     backgroundColor: 'blue',
@@ -132,14 +146,14 @@ const Pincher = (props: React.PropsWithChildren<any>) => {
   }));
 
   return (
-    <GestureDetector gesture={composed}>
+    <GestureDetector gesture={gesture}>
       <Animated.View
         style={styles.container}
         onLayout={event => {
           width.value = event.nativeEvent.layout.width;
           height.value = event.nativeEvent.layout.height;
-          x.value = event.nativeEvent.layout.width / 2;
-          y.value = event.nativeEvent.layout.height / 2;
+          xCenter.value = event.nativeEvent.layout.width / 2;
+          yCenter.value = event.nativeEvent.layout.height / 2;
         }}>
         <Animated.View collapsable={false} style={animatedStyles}>
           {props.children}
