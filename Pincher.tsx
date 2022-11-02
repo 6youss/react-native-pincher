@@ -2,18 +2,17 @@ import React from 'react';
 import {StyleSheet} from 'react-native';
 
 import {Gesture, GestureDetector} from 'react-native-gesture-handler';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-} from 'react-native-reanimated';
+import Animated, {useAnimatedStyle, useSharedValue} from 'react-native-reanimated';
 
 interface PincherProps extends React.PropsWithChildren<any> {
-  minScale: number;
-  maxScale: number;
+  minScale?: number;
+  maxScale?: number;
+  defaultScale?: number;
+  padding?: number;
 }
 
 const Pincher = (props: PincherProps) => {
-  const {minScale = 0, maxScale = 100} = props;
+  const {minScale = 0.5, maxScale = 3, defaultScale = 1, padding = 50} = props;
   const viewPortWidth = useSharedValue(0);
   const viewPortHeight = useSharedValue(0);
   const worldWidth = useSharedValue(0);
@@ -35,8 +34,8 @@ const Pincher = (props: PincherProps) => {
   const xFocal = useSharedValue(0);
   const yFocal = useSharedValue(0);
 
-  const scale = useSharedValue(1);
-  const prevScale = useSharedValue(1);
+  const scale = useSharedValue(defaultScale);
+  const prevScale = useSharedValue(defaultScale);
 
   const xPreviousOffset = useSharedValue(0);
   const yPreviousOffset = useSharedValue(0);
@@ -47,10 +46,10 @@ const Pincher = (props: PincherProps) => {
 
   function getDistances(_xCenter: number, _yCenter: number) {
     'worklet';
-    const extremeTop = _yCenter - (worldHeight.value / 2) * scale.value;
-    const extremeRight = _xCenter + (worldWidth.value / 2) * scale.value;
-    const extremeBottom = _yCenter + (worldHeight.value / 2) * scale.value;
-    const extremeLeft = _xCenter - (worldWidth.value / 2) * scale.value;
+    const extremeTop = _yCenter - ((worldHeight.value / 2) * scale.value + padding);
+    const extremeRight = _xCenter + ((worldWidth.value / 2) * scale.value + padding);
+    const extremeBottom = _yCenter + ((worldHeight.value / 2) * scale.value + padding);
+    const extremeLeft = _xCenter - ((worldWidth.value / 2) * scale.value + padding);
 
     const distanceTop = 0 - extremeTop;
     const distanceRight = viewPortWidth.value - extremeRight;
@@ -88,21 +87,31 @@ const Pincher = (props: PincherProps) => {
 
       const nextXcenter = xPrevCenter.value + nextXdrag - xPreviousDrag.value;
       const nextYcenter = yPrevCenter.value + nextYdrag - yPreviousDrag.value;
-      const {distanceRight, distanceLeft, distanceTop, distanceBottom} =
-        getDistances(nextXcenter, nextYcenter);
 
-      if (distanceRight > 0) {
+      const {distanceRight, distanceLeft, distanceTop, distanceBottom} = getDistances(nextXcenter, nextYcenter);
+
+      const isSparpou7i = distanceRight > 0 && distanceLeft < 0;
+      const canDragFromRight = distanceRight <= 0 && e.translationX < 0;
+      const canDragFromLeft = distanceLeft >= 0 && e.translationX > 0;
+
+      if (isSparpou7i || canDragFromLeft || canDragFromRight) {
         xDragOffset.value = nextXdrag;
         xCenter.value = nextXcenter;
       }
 
-      yDragOffset.value = nextYdrag;
-      yCenter.value = nextYcenter;
+      const isYzatat = distanceTop < 0 && distanceBottom > 0;
+      const canDragFromBottom = distanceBottom <= 0 && e.translationY < 0;
+      const canDragFromTop = distanceTop >= 0 && e.translationY > 0;
+
+      if (isYzatat || canDragFromBottom || canDragFromTop) {
+        yDragOffset.value = nextYdrag;
+        yCenter.value = nextYcenter;
+      }
     })
     .onEnd(() => {
       xPrevCenter.value = xCenter.value;
-      yPrevCenter.value = yCenter.value;
       xPreviousDrag.value = xDragOffset.value;
+      yPrevCenter.value = yCenter.value;
       yPreviousDrag.value = yDragOffset.value;
     });
 
@@ -110,43 +119,39 @@ const Pincher = (props: PincherProps) => {
     'worklet';
     return nextScale >= minScale && nextScale <= maxScale;
   }
+
   const zoomGesture = Gesture.Pinch()
     .onStart(event => {
-      if (!isScalable(scale.value)) {
-        return;
-      }
       xFocal.value = event.focalX;
       yFocal.value = event.focalY;
-      translateX.value = (xFocal.value - xCenter.value) / prevScale.value;
-      translateY.value = (yFocal.value - yCenter.value) / prevScale.value;
+      translateX.value = (xFocal.value - xPrevCenter.value) / prevScale.value;
+      translateY.value = (yFocal.value - yPrevCenter.value) / prevScale.value;
     })
     .onUpdate(event => {
       const nextScale = prevScale.value * event.scale;
       if (!isScalable(nextScale)) {
         return;
       }
-      scale.value = nextScale;
 
+      scale.value = nextScale;
       xNewOffset.value = (1 - event.scale) * translateX.value;
       yNewOffset.value = (1 - event.scale) * translateY.value;
 
-      xOffset.value =
-        prevScale.value * xNewOffset.value + xPreviousOffset.value;
-      yOffset.value =
-        prevScale.value * yNewOffset.value + yPreviousOffset.value;
+      xOffset.value = xPreviousOffset.value + prevScale.value * xNewOffset.value;
+      yOffset.value = yPreviousOffset.value + prevScale.value * yNewOffset.value;
+
+      xCenter.value = xPrevCenter.value + xNewOffset.value * prevScale.value;
+      yCenter.value = yPrevCenter.value + yNewOffset.value * prevScale.value;
     })
     .onEnd(() => {
-      if (!isScalable(scale.value)) {
-        return;
-      }
       xPreviousOffset.value = xOffset.value;
       yPreviousOffset.value = yOffset.value;
-      xCenter.value = xCenter.value + xNewOffset.value * prevScale.value;
-      yCenter.value = yCenter.value + yNewOffset.value * prevScale.value;
+      xPrevCenter.value = xCenter.value;
+      yPrevCenter.value = yCenter.value;
       prevScale.value = scale.value;
     });
 
-  const gesture = Gesture.Simultaneous(dragGesture, zoomGesture);
+  const gesture = Gesture.Race(dragGesture, zoomGesture);
 
   const middleStyles = useAnimatedStyle(() => ({
     display: 'none',
@@ -205,7 +210,7 @@ const Pincher = (props: PincherProps) => {
         <Animated.View style={focalStyles}></Animated.View>
         <Animated.View style={offsetStyles}></Animated.View>
 
-        <Animated.View style={styles.test}></Animated.View>
+        {/* <Animated.View style={styles.test}></Animated.View> */}
       </Animated.View>
     </GestureDetector>
   );
@@ -222,11 +227,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  test: {
-    display: 'none',
-    backgroundColor: 'red',
-    width: 30,
-    height: 30,
-    transform: [{translateX: 15}, {translateY: 15}, {scale: 10}],
-  },
+  // test: {
+  //   backgroundColor: 'red',
+  //   width: 30,
+  //   height: 30,
+  //   transform: [{translateX: 15}, {translateY: 15}, {scale: 10}],
+  // },
 });
