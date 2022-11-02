@@ -1,12 +1,10 @@
 import React from 'react';
-import {Dimensions, StyleSheet} from 'react-native';
+import {StyleSheet} from 'react-native';
 
 import {Gesture, GestureDetector} from 'react-native-gesture-handler';
 import Animated, {
-  runOnUI,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
 } from 'react-native-reanimated';
 
 interface PincherProps extends React.PropsWithChildren<any> {
@@ -15,9 +13,11 @@ interface PincherProps extends React.PropsWithChildren<any> {
 }
 
 const Pincher = (props: PincherProps) => {
-  const {minScale = 1, maxScale = 3} = props;
-  const width = useSharedValue(Dimensions.get('screen').width);
-  const height = useSharedValue(Dimensions.get('screen').height);
+  const {minScale = 0, maxScale = 100} = props;
+  const viewPortWidth = useSharedValue(0);
+  const viewPortHeight = useSharedValue(0);
+  const worldWidth = useSharedValue(0);
+  const worldHeight = useSharedValue(0);
 
   const xDragOffset = useSharedValue(0);
   const yDragOffset = useSharedValue(0);
@@ -29,6 +29,8 @@ const Pincher = (props: PincherProps) => {
 
   const xCenter = useSharedValue(0);
   const yCenter = useSharedValue(0);
+  const xPrevCenter = useSharedValue(0);
+  const yPrevCenter = useSharedValue(0);
 
   const xFocal = useSharedValue(0);
   const yFocal = useSharedValue(0);
@@ -42,6 +44,26 @@ const Pincher = (props: PincherProps) => {
   const yNewOffset = useSharedValue(0);
   const xOffset = useSharedValue(0);
   const yOffset = useSharedValue(0);
+
+  function getDistances(_xCenter: number, _yCenter: number) {
+    'worklet';
+    const extremeTop = _yCenter - (worldHeight.value / 2) * scale.value;
+    const extremeRight = _xCenter + (worldWidth.value / 2) * scale.value;
+    const extremeBottom = _yCenter + (worldHeight.value / 2) * scale.value;
+    const extremeLeft = _xCenter - (worldWidth.value / 2) * scale.value;
+
+    const distanceTop = 0 - extremeTop;
+    const distanceRight = viewPortWidth.value - extremeRight;
+    const distanceBottom = viewPortHeight.value - extremeBottom;
+    const distanceLeft = 0 - extremeLeft;
+
+    return {
+      distanceTop,
+      distanceRight,
+      distanceBottom,
+      distanceLeft,
+    };
+  }
 
   const animatedStyles = useAnimatedStyle(() => {
     return {
@@ -61,12 +83,25 @@ const Pincher = (props: PincherProps) => {
   const dragGesture = Gesture.Pan()
     .averageTouches(true)
     .onUpdate(e => {
-      xDragOffset.value = e.translationX + xPreviousDrag.value;
-      yDragOffset.value = e.translationY + yPreviousDrag.value;
+      const nextXdrag = e.translationX + xPreviousDrag.value;
+      const nextYdrag = e.translationY + yPreviousDrag.value;
+
+      const nextXcenter = xPrevCenter.value + nextXdrag - xPreviousDrag.value;
+      const nextYcenter = yPrevCenter.value + nextYdrag - yPreviousDrag.value;
+      const {distanceRight, distanceLeft, distanceTop, distanceBottom} =
+        getDistances(nextXcenter, nextYcenter);
+
+      if (distanceRight > 0) {
+        xDragOffset.value = nextXdrag;
+        xCenter.value = nextXcenter;
+      }
+
+      yDragOffset.value = nextYdrag;
+      yCenter.value = nextYcenter;
     })
     .onEnd(() => {
-      xCenter.value = xCenter.value + xDragOffset.value - xPreviousDrag.value;
-      yCenter.value = yCenter.value + yDragOffset.value - yPreviousDrag.value;
+      xPrevCenter.value = xCenter.value;
+      yPrevCenter.value = yCenter.value;
       xPreviousDrag.value = xDragOffset.value;
       yPreviousDrag.value = yDragOffset.value;
     });
@@ -76,7 +111,6 @@ const Pincher = (props: PincherProps) => {
     return nextScale >= minScale && nextScale <= maxScale;
   }
   const zoomGesture = Gesture.Pinch()
-
     .onStart(event => {
       if (!isScalable(scale.value)) {
         return;
@@ -117,8 +151,8 @@ const Pincher = (props: PincherProps) => {
   const middleStyles = useAnimatedStyle(() => ({
     display: 'none',
     position: 'absolute',
-    left: width.value / 2,
-    top: height.value / 2,
+    left: viewPortWidth.value / 2,
+    top: viewPortHeight.value / 2,
     width: 10,
     height: 10,
     backgroundColor: 'red',
@@ -150,12 +184,21 @@ const Pincher = (props: PincherProps) => {
       <Animated.View
         style={styles.container}
         onLayout={event => {
-          width.value = event.nativeEvent.layout.width;
-          height.value = event.nativeEvent.layout.height;
+          // because the flex is centered, the children coordinates are in the center of the container
+          viewPortWidth.value = event.nativeEvent.layout.width;
+          viewPortHeight.value = event.nativeEvent.layout.height;
           xCenter.value = event.nativeEvent.layout.width / 2;
           yCenter.value = event.nativeEvent.layout.height / 2;
+          xPrevCenter.value = event.nativeEvent.layout.width / 2;
+          yPrevCenter.value = event.nativeEvent.layout.height / 2;
         }}>
-        <Animated.View collapsable={false} style={animatedStyles}>
+        <Animated.View
+          collapsable={false}
+          style={animatedStyles}
+          onLayout={event => {
+            worldWidth.value = event.nativeEvent.layout.width;
+            worldHeight.value = event.nativeEvent.layout.height;
+          }}>
           {props.children}
         </Animated.View>
         <Animated.View style={middleStyles}></Animated.View>
