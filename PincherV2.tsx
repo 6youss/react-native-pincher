@@ -86,11 +86,13 @@ const Pincher = (props: PincherProps) => {
       };
     });
 
+  const anchorOffset = useSharedValue({x: 0, y: 0});
+
   const rotateGesture = Gesture.Rotation()
     .onBegin(event => {
       anchor.value = {
-        x: event.anchorX - (center.value.x + savedTranslation.value.x),
-        y: event.anchorY - (center.value.y + savedTranslation.value.y),
+        x: event.anchorX - (center.value.x + anchorOffset.value.x),
+        y: event.anchorY - (center.value.y + anchorOffset.value.y),
       };
     })
     .onUpdate(event => {
@@ -98,9 +100,13 @@ const Pincher = (props: PincherProps) => {
     })
     .onEnd(() => {
       savedRotation.value = rotation.value;
+      anchorOffset.value = {
+        x: 0,
+        y: 0,
+      };
     });
 
-  const composed = Gesture.Simultaneous(zoomGesture, dragGesture, rotateGesture);
+  const composed = Gesture.Simultaneous(rotateGesture);
 
   const animatedStyles = useAnimatedStyle(() => {
     return {
